@@ -21,38 +21,22 @@ jobs:
       - name: Set up Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
         with:
-          project_id: \${{ secrets.GCP_PROJECT_ID }}
-          service_account_key: \${{ secrets.GCP_SA_KEY }}
-          export_default_credentials: true
+          service_account_key: ${{ secrets.GCP_SA_KEY }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
 
-      - name: Authenticate Service Account for Terraform
-        run: |
-          echo "\${{ secrets.GCP_SA_KEY }}" > \$HOME/gcp-key.json
-          echo "GOOGLE_APPLICATION_CREDENTIALS=\$HOME/gcp-key.json" >> \$GITHUB_ENV
+      - name: Write service account key to file
+        run: echo '${{ secrets.GCP_SA_KEY }}' > $HOME/gcp-key.json
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.6.0
 
       - name: Terraform Init
-        working-directory: ./terraform
-        run: terraform init -input=false
+        working-directory: .
+        run: terraform init
 
       - name: Terraform Apply
-        working-directory: ./terraform
+        working-directory: .
         run: terraform apply -auto-approve -input=false \
-          -var="project_id=\${{ secrets.GCP_PROJECT_ID }}" \
-          -var="image_url=us-central1-docker.pkg.dev/\${{ secrets.GCP_PROJECT_ID }}/cloudrun-repo/backend-app:v1"
-
-      - name: Build & Push Docker Image
-        run: |
-          gcloud builds submit ./app \
-            --tag us-central1-docker.pkg.dev/\${{ secrets.GCP_PROJECT_ID }}/cloudrun-repo/backend-app:v1
-
-      - name: Deploy to Cloud Run
-        run: |
-          gcloud run deploy backend-app \
-            --image us-central1-docker.pkg.dev/\${{ secrets.GCP_PROJECT_ID }}/cloudrun-repo/backend-app:v1 \
-            --region us-central1 \
-            --allow-unauthenticated
+          -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
+          -var="credentials_file=$HOME/gcp-key.json" \
+          -var="image_url=us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/cloudrun-repo/backend-app:v1"
