@@ -8,9 +8,7 @@ on:
 
 jobs:
   deploy:
-    name: Deploy Backend to Cloud Run
     runs-on: ubuntu-latest
-
     permissions:
       contents: read
       id-token: write
@@ -44,11 +42,13 @@ jobs:
           terraform_version: 1.5.7
 
       - name: Terraform Init
-        run: terraform init -input=false -chdir="./terraform"
+        working-directory: ./terraform
+        run: terraform init -input=false
 
       - name: Terraform Plan
+        working-directory: ./terraform
         run: |
-          terraform plan -input=false -chdir="./terraform" \
+          terraform plan -input=false \
             -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
             -var="credentials_file=$HOME/gcp-key.json" \
             -var="image_url=us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/cloudrun-repo/backend-app:v1" \
@@ -56,8 +56,9 @@ jobs:
             -var="region=us-central1"
 
       - name: Terraform Apply
+        working-directory: ./terraform
         run: |
-          terraform apply -auto-approve -input=false -chdir="./terraform" \
+          terraform apply -auto-approve -input=false \
             -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
             -var="credentials_file=$HOME/gcp-key.json" \
             -var="image_url=us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/cloudrun-repo/backend-app:v1" \
@@ -65,6 +66,6 @@ jobs:
             -var="region=us-central1"
 
       - name: Output Cloud Run URL
+        working-directory: ./terraform
         run: |
-          terraform output -raw service_url -chdir="./terraform" || \
-          terraform output -json -chdir="./terraform" | jq -r ".service_url.value // empty"
+          terraform output -raw service_url || terraform output -json | jq -r ".service_url.value // empty"
