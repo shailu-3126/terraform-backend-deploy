@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch: {}
 
 jobs:
   deploy:
@@ -17,12 +18,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Set up Google Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-        with:
-          service_account_key: ${{ secrets.GCP_SA_KEY }}
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
 
       - name: Write service account key to file (safe for escaped \n)
         run: |
@@ -43,11 +38,13 @@ jobs:
           terraform_version: 1.5.7
 
       - name: Terraform Init
-        run: terraform init -input=false -chdir="./terraform"
+        working-directory: ./terraform
+        run: terraform init -input=false
 
       - name: Terraform Plan
+        working-directory: ./terraform
         run: |
-          terraform plan -input=false -chdir="./terraform" \
+          terraform plan -input=false \
             -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
             -var="credentials_file=$HOME/gcp-key.json" \
             -var="image_url=us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/cloudrun-repo/backend-app:v1" \
@@ -55,8 +52,9 @@ jobs:
             -var="region=us-central1"
 
       - name: Terraform Apply
+        working-directory: ./terraform
         run: |
-          terraform apply -auto-approve -input=false -chdir="./terraform" \
+          terraform apply -auto-approve -input=false \
             -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
             -var="credentials_file=$HOME/gcp-key.json" \
             -var="image_url=us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/cloudrun-repo/backend-app:v1" \
@@ -64,6 +62,14 @@ jobs:
             -var="region=us-central1"
 
       - name: Output Cloud Run URL
+        working-directory: ./terraform
         run: |
-          terraform output -raw service_url -chdir="./terraform" || \
-          terraform output -json -chdir="./terraform" | jq -r ".service_url.value // empty"
+          terraform output -raw service_url || terraform output -json | jq -r ".service_url.value // empty"
+
+      - name: Upload terraform debug log (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-log
+          path: terraform.log
+          retention-days: 7
