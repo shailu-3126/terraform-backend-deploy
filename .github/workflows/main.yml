@@ -1,7 +1,7 @@
 rm -f .github/workflows/deploy.yml
 
 cat <<'EOF' > .github/workflows/deploy.yml
-name: "Terraform and Cloud Run Deploy"
+name: "Terraform_and_Cloud_Run_Deploy"
 
 on:
   push:
