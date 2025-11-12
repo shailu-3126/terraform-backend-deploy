@@ -1,0 +1,54 @@
+mkdir -p .github/workflows
+
+cat <<'EOF' > .github/workflows/deploy.yml
+name: 🚀 Terraform + Cloud Run Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy Backend to Cloud Run
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - name: 📦 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🧰 Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          service_account_key: ${{ secrets.GCP_SA_KEY }}
+          export_default_credentials: true
+
+      - name: 🔧 Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+
+      - name: 🌍 Terraform Init
+        working-directory: ./terraform
+        run: terraform init -input=false
+
+      - name: 🏗️ Terraform Apply
+        working-directory: ./terraform
+        run: terraform apply -auto-approve -input=false -var="image_url=us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/cloudrun-repo/backend-app:v1"
+
+      - name: 🐳 Build & Push Docker Image
+        run: |
+          gcloud builds submit ./app --tag us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/cloudrun-repo/backend-app:v1
+
+      - name: 🚀 Deploy to Cloud Run
+        run: |
+          gcloud run deploy backend-app \
+            --image us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/cloudrun-repo/backend-app:v1 \
+            --region us-central1 \
+            --allow-unauthenticated
+EOF
