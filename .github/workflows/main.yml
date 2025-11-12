@@ -1,7 +1,9 @@
 rm -f .github/workflows/deploy.yml
 
+mkdir -p .github/workflows
+
 cat <<'EOF' > .github/workflows/deploy.yml
-name: "Terraform_and_Cloud_Run_Deploy"
+name: Terraform_and_Cloud_Run_Deploy
 
 on:
   push:
@@ -10,7 +12,7 @@ on:
 
 jobs:
   deploy:
-    name: "Deploy Backend to Cloud Run"
+    name: Deploy Backend to Cloud Run
     runs-on: ubuntu-latest
 
     permissions:
