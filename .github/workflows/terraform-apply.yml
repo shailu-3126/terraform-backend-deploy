@@ -1,1 +1,84 @@
-# (paste entire YAML content from above here)
+name: Terraform_and_Cloud_Run_Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    name: Deploy Backend to Cloud Run
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ✅ Decode GCP service account key from base64
+      - name: Decode GCP key from base64
+        run: |
+          echo "${GCP_SA_KEY_B64}" | base64 --decode > "$HOME/gcp-key.json"
+          chmod 600 "$HOME/gcp-key.json"
+          echo "Key file size (bytes): $(wc -c < $HOME/gcp-key.json)"
+        env:
+          GCP_SA_KEY_B64: ${{ secrets.GCP_SA_KEY_B64 }}
+
+      # ✅ Validate the decoded key file
+      - name: Validate credentials JSON
+        run: |
+          jq -e . "$HOME/gcp-key.json" >/dev/null \
+            && echo "✅ JSON is valid" \
+            || (echo "❌ Invalid JSON credentials file" && exit 1)
+
+      # ✅ Export credentials for Terraform & gcloud
+      - name: Set GOOGLE_APPLICATION_CREDENTIALS
+        run: echo "GOOGLE_APPLICATION_CREDENTIALS=$HOME/gcp-key.json" >> $GITHUB_ENV
+
+      # ✅ Set up Terraform
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.7
+
+      # ✅ Terraform Init
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init -input=false
+
+      # ✅ Terraform Plan
+      - name: Terraform Plan
+        working-directory: ./terraform
+        run: |
+          terraform plan -input=false \
+            -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
+            -var="credentials_file=$HOME/gcp-key.json" \
+            -var="image_url=us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/cloudrun-repo/backend-app:v1" \
+            -var="app_name=backend-app" \
+            -var="region=us-central1"
+
+      # ✅ Terraform Apply
+      - name: Terraform Apply
+        working-directory: ./terraform
+        run: |
+          terraform apply -auto-approve -input=false \
+            -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
+            -var="credentials_file=$HOME/gcp-key.json" \
+            -var="image_url=us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/cloudrun-repo/backend-app:v1" \
+            -var="app_name=backend-app" \
+            -var="region=us-central1"
+
+      # ✅ Output Cloud Run URL
+      - name: Show Cloud Run URL
+        working-directory: ./terraform
+        run: |
+          SERVICE_URL=$(terraform output -raw service_url 2>/dev/null || terraform output -json | jq -r ".service_url.value // empty")
+          echo ""
+          echo "======================================"
+          echo "✅ Cloud Run deployed successfully!"
+          echo "🌍 URL: $SERVICE_URL"
+          echo "======================================"
