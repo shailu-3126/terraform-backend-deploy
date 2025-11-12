@@ -1,10 +1,9 @@
-name: Terraform_and_Cloud_Run_Deploy
+name: Terraform_and_Cloud_Run_Deploy (debug)
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch: {}
+  push:
+    branches: [ main ]
 
 jobs:
   deploy:
@@ -14,8 +13,16 @@ jobs:
       id-token: write
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Print workspace & files
+        run: |
+          echo "PWD=$(pwd)"
+          echo "List repo root:"
+          ls -la
+          echo "List terraform folder:"
+          ls -la terraform || true
 
       - name: Set up Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
@@ -23,12 +30,27 @@ jobs:
           service_account_key: ${{ secrets.GCP_SA_KEY }}
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
-      - name: Write service account key to file (safe for escaped \n)
+      - name: Print environment (sensitive values redacted)
+        run: |
+          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+          echo "HOME=$HOME"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$GOOGLE_APPLICATION_CREDENTIALS"
+          terraform version || echo "terraform not found yet"
+
+      - name: Install utilities
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Write service account key to file (safe)
         run: |
           printf '%b' "$GCP_SA_KEY" > "$HOME/gcp-key.json"
           chmod 600 "$HOME/gcp-key.json"
         env:
           GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Show first lines of key file (no secrets in log beyond confirmation)
+        run: |
+          echo "Showing first 6 lines of $HOME/gcp-key.json (not full file):"
+          head -n 6 "$HOME/gcp-key.json" || true
 
       - name: Validate credentials JSON
         run: jq -e . "$HOME/gcp-key.json" >/dev/null || (echo "Invalid JSON credentials file" && exit 1)
@@ -36,16 +58,27 @@ jobs:
       - name: Set GOOGLE_APPLICATION_CREDENTIALS
         run: echo "GOOGLE_APPLICATION_CREDENTIALS=$HOME/gcp-key.json" >> $GITHUB_ENV
 
-      - name: Set up Terraform
+      - name: Enable Terraform debug logging
+        run: |
+          echo "TF_LOG=DEBUG" >> $GITHUB_ENV
+          echo "TF_LOG_PATH=$GITHUB_WORKSPACE/terraform.log" >> $GITHUB_ENV
+
+      - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.5.7
 
-      - name: Terraform Init
+      - name: Terraform version + providers
+        working-directory: ./terraform
+        run: |
+          terraform version
+          terraform providers || true
+
+      - name: Terraform init (debug)
         working-directory: ./terraform
         run: terraform init -input=false
 
-      - name: Terraform Plan
+      - name: Terraform plan (debug)
         working-directory: ./terraform
         run: |
           terraform plan -input=false \
@@ -55,7 +88,7 @@ jobs:
             -var="app_name=backend-app" \
             -var="region=us-central1"
 
-      - name: Terraform Apply
+      - name: Terraform apply (debug)
         working-directory: ./terraform
         run: |
           terraform apply -auto-approve -input=false \
@@ -65,7 +98,12 @@ jobs:
             -var="app_name=backend-app" \
             -var="region=us-central1"
 
-      - name: Output Cloud Run URL
-        working-directory: ./terraform
-        run: |
-          terraform output -raw service_url || terraform output -json | jq -r ".service_url.value // empty"
+    # Always upload the terraform.log for post-mortem
+    # (debug log will be created if TF_LOG_PATH set above)
+    - name: Upload terraform log
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: terraform-log
+        path: terraform.log
+        retention-days: 7
