@@ -1,0 +1,64 @@
+name: Terraform Apply (GitHub Actions)
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [ main ]
+
+jobs:
+  terraform-apply:
+    runs-on: ubuntu-latest
+    env:
+      TF_DIR: terraform
+      IMAGE_TAG: v1
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.7
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Write GCP credentials file
+        run: |
+          echo "$GCP_SA_KEY" > "$HOME/gcp-key.json"
+          chmod 600 "$HOME/gcp-key.json"
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set GOOGLE_APPLICATION_CREDENTIALS
+        run: echo "GOOGLE_APPLICATION_CREDENTIALS=$HOME/gcp-key.json" >> $GITHUB_ENV
+
+      - name: Terraform init
+        run: terraform init -input=false -chdir="${{ env.TF_DIR }}"
+
+      - name: Terraform plan
+        run: |
+          terraform plan -input=false -chdir="${{ env.TF_DIR }}" \
+            -var="project_id=${{ secrets.PROJECT_ID }}" \
+            -var="credentials_file=$HOME/gcp-key.json" \
+            -var="image_url=us-central1-docker.pkg.dev/${{ secrets.PROJECT_ID }}/cloudrun-repo/backend-app:${IMAGE_TAG}" \
+            -var="app_name=backend-app" \
+            -var="region=us-central1"
+
+      - name: Terraform apply
+        run: |
+          terraform apply -auto-approve -input=false -chdir="${{ env.TF_DIR }}" \
+            -var="project_id=${{ secrets.PROJECT_ID }}" \
+            -var="credentials_file=$HOME/gcp-key.json" \
+            -var="image_url=us-central1-docker.pkg.dev/${{ secrets.PROJECT_ID }}/cloudrun-repo/backend-app:${IMAGE_TAG}" \
+            -var="app_name=backend-app" \
+            -var="region=us-central1"
+
+      - name: Show service URL
+        run: |
+          if terraform output -raw service_url -chdir="${{ env.TF_DIR }}" >/dev/null 2>&1; then
+            terraform output -raw service_url -chdir="${{ env.TF_DIR }}"
+          else
+            terraform output -json -chdir="${{ env.TF_DIR }}" | jq -r ".service_url.value // empty"
+          fi
