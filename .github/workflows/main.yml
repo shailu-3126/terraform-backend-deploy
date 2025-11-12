@@ -19,17 +19,24 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ✅ Decode base64 secret safely — no JSON escaping issues
-      - name: Decode service account key
+      # Decode base64 secret safely (avoids JSON escaping/paste issues)
+      - name: Decode service account key from base64 (safe)
         run: |
           echo "$GCP_SA_KEY_B64" | base64 --decode > "$HOME/gcp-key.json"
           chmod 600 "$HOME/gcp-key.json"
+          echo "Key file size (bytes):" $(wc -c < "$HOME/gcp-key.json")
         env:
           GCP_SA_KEY_B64: ${{ secrets.GCP_SA_KEY_B64 }}
+
+      # Validate JSON to fail fast if something still wrong
+      - name: Validate credentials JSON
+        run: |
+          jq -e . "$HOME/gcp-key.json" >/dev/null || (echo "Invalid JSON credentials file" && exit 1)
 
       - name: Set GOOGLE_APPLICATION_CREDENTIALS
         run: echo "GOOGLE_APPLICATION_CREDENTIALS=$HOME/gcp-key.json" >> $GITHUB_ENV
 
+      # Terraform setup
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -59,6 +66,7 @@ jobs:
             -var="app_name=backend-app" \
             -var="region=us-central1"
 
+      # Show Cloud Run URL clearly at the end
       - name: Show Cloud Run URL
         working-directory: ./terraform
         run: |
@@ -68,3 +76,12 @@ jobs:
           echo "✅ Cloud Run deployed successfully!"
           echo "🌍 URL: $SERVICE_URL"
           echo "======================================"
+
+      # Always upload terraform debug log
+      - name: Upload terraform debug log (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-log
+          path: terraform.log
+          retention-days: 7
