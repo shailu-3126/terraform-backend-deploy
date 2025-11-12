@@ -19,6 +19,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # ✅ Write and validate your service account key
       - name: Write service account key to file (safe for escaped \n)
         run: |
           printf '%b' "$GCP_SA_KEY" > "$HOME/gcp-key.json"
@@ -32,6 +33,7 @@ jobs:
       - name: Set GOOGLE_APPLICATION_CREDENTIALS
         run: echo "GOOGLE_APPLICATION_CREDENTIALS=$HOME/gcp-key.json" >> $GITHUB_ENV
 
+      # ✅ Terraform setup
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -61,11 +63,18 @@ jobs:
             -var="app_name=backend-app" \
             -var="region=us-central1"
 
-      - name: Output Cloud Run URL
+      # ✅ Show Cloud Run URL clearly at the end
+      - name: Show Cloud Run URL
         working-directory: ./terraform
         run: |
-          terraform output -raw service_url || terraform output -json | jq -r ".service_url.value // empty"
+          SERVICE_URL=$(terraform output -raw service_url 2>/dev/null || terraform output -json | jq -r ".service_url.value // empty")
+          echo ""
+          echo "======================================"
+          echo "✅ Cloud Run deployed successfully!"
+          echo "🌍 URL: $SERVICE_URL"
+          echo "======================================"
 
+      # Optional debug logs
       - name: Upload terraform debug log (always)
         if: always()
         uses: actions/upload-artifact@v4
